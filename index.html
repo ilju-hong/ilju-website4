@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>(남의) 연애 게시판</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+        body { font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif; }
+    </style>
+</head>
+<body class="bg-gray-100 dark:bg-slate-950 text-gray-800 dark:text-gray-100 min-h-screen transition-colors duration-200 py-6 px-3 sm:px-4">
+
+    <div id="app" class="max-w-2xl mx-auto space-y-4">
+        <main class="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-800 shadow-md overflow-hidden">
+
+            <!-- 헤더 -->
+            <div class="border-b border-gray-100 dark:border-slate-800 p-4 sm:p-5 bg-slate-50/50 dark:bg-slate-900/50">
+                <div class="flex justify-between items-center text-xs text-red-600 dark:text-red-400 font-semibold mb-1">
+                    <span class="flex items-center"><i data-lucide="message-square" class="w-3.5 h-3.5 mr-1"></i> (남의) 연애 게시판</span>
+                    <span class="bg-red-50 dark:bg-red-950/60 px-2 py-0.5 rounded text-[11px]">익명</span>
+                </div>
+                <h2 id="displayPostTitle" class="text-base sm:text-xl font-bold text-gray-900 dark:text-gray-50 leading-snug mt-1 break-words"></h2>
+
+                <div class="flex items-center justify-between text-xs text-gray-400 dark:text-gray-500 mt-3 pt-3 border-t border-gray-100 dark:border-slate-800/80">
+                    <div class="flex items-center space-x-2">
+                        <span class="font-medium text-gray-700 dark:text-gray-300 flex items-center">
+                            <span class="text-xs mr-1">🍎</span>익명
+                        </span>
+                        <span>•</span>
+                        <span id="displayPostTime">--</span>
+                    </div>
+                    <div class="flex items-center space-x-3">
+                        <span class="flex items-center"><i data-lucide="eye" class="w-3.5 h-3.5 mr-1"></i> <span id="displayViews">0</span></span>
+                        <button onclick="likeMeta('post')" class="flex items-center text-red-500 hover:text-red-600 transition-transform active:scale-125 cursor-pointer select-none">
+                            <i data-lucide="thumbs-up" class="w-3.5 h-3.5 mr-1"></i>
+                            <span id="displayLikes">0</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 본문 -->
+            <div class="p-4 sm:p-6 text-sm sm:text-base leading-relaxed text-gray-800 dark:text-gray-200 min-h-[150px] border-b border-gray-100 dark:border-slate-800">
+                <div id="displayPostContent" class="whitespace-pre-wrap break-words"></div>
+            </div>
+
+            <!-- 댓글 목록 -->
+            <div class="p-4 sm:p-5">
+                <h3 class="text-xs sm:text-sm font-bold text-gray-700 dark:text-gray-300 flex items-center mb-4">
+                    <i data-lucide="message-circle" class="w-4 h-4 mr-1.5 text-red-500"></i>
+                    댓글 <span id="displayCommentCount" class="text-red-600 dark:text-red-400 ml-1">0</span>개
+                </h3>
+                <div id="commentsContainer" class="space-y-3"></div>
+            </div>
+
+            <!-- 댓글 작성 폼 -->
+            <div class="p-4 sm:p-5 border-t border-gray-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
+                <div id="replyNotice" class="hidden text-xs text-red-600 dark:text-red-400 mb-2">
+                    ↳ <span id="replyTarget" class="font-bold"></span> 답글 작성 중 <button onclick="cancelReply()" class="underline ml-1">취소</button>
+                </div>
+                <div id="authorNotice" class="hidden text-xs text-red-600 dark:text-red-400 mb-2 font-semibold">
+                    🍎 글쓴이로 로그인됨 (댓글이 글쓴이로 표시돼요)
+                </div>
+                <input id="nickInput" maxlength="20" placeholder="닉네임 (비우면 익명)"
+                    class="w-full mb-2 px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 outline-none focus:border-red-400">
+                <textarea id="textInput" maxlength="500" rows="3" placeholder="댓글을 입력하세요 (최대 500자)"
+                    class="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 outline-none focus:border-red-400 resize-none"></textarea>
+                <div class="flex justify-between items-center mt-2">
+                    <button id="adminBtn" onclick="adminLogin()" class="hidden text-[11px] text-gray-400 underline">글쓴이 로그인</button>
+                    <span class="flex-1"></span>
+                    <button id="submitBtn" onclick="submitComment()" class="bg-red-500 hover:bg-red-600 disabled:opacity-50 text-white text-sm font-bold px-4 py-2 rounded-lg active:scale-95 transition">등록</button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script type="module">
+        import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+        /* =====================================================================
+         *  ★ 1. Supabase 값 두 개를 본인 것으로 바꾸세요
+         *     Supabase 대시보드 → Project Settings → API Keys
+         *     (Publishable key 는 공개용이라 코드에 넣어도 됩니다. secret / service_role 키는 절대 금지!)
+         * ===================================================================== */
+        const SUPABASE_URL = "https://bkpjleaoapfhgrzvjxud.supabase.co";
+        const SUPABASE_KEY = "sb_publishable_fnzgXg_dSOUcKH-Yfsn1BA_ujrlzBMX";
+
+        /* =====================================================================
+         *  글(본문)과 기존 댓글은 여기서 직접 수정합니다. (글쓴이 댓글: isAuthor: true)
+         *  새로 달리는 댓글은 Supabase DB에 저장되어 이 목록 뒤에 붙습니다.
+         * ===================================================================== */
+        const POST_DATA = {
+            title: "드럼, 베이스 썸타는 거 비밀로 해줘?",
+            time: "방금 전",
+            views: 723,
+            content: "금드럼, 금베이스니까 모르는 척해주는 게 맞나 근데 티가 너무 많이 나는데 학교 연습실 방음문도 알듯",
+            comments: []
+        };
+
+        const COOLDOWN_MS = 10000;   // 같은 브라우저 연속 등록 방지 (10초)
+        const POLL_MS = 15000;       // 새 댓글 자동 확인 간격 (15초)
+
+        const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        let live = [];          // 서버에서 받아온 댓글들
+        let likesMap = {};      // 글/기존 댓글 좋아요 (meta 테이블)
+        let replyTo = null;     // 답글 대상 (최상위 댓글 키)
+        let replyToName = '';   // 답글 대상의 이름 (@표시용)
+        let isAuthorUser = false;
+        let names = [];
+
+        /* ---------- 유틸 ---------- */
+        const esc = (s) => String(s ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+
+        function fmtTime(d) {
+            const diff = (Date.now() - d.getTime()) / 1000;
+            if (diff < 60) return '방금 전';
+            if (diff < 3600) return `${Math.floor(diff / 60)}분 전`;
+            if (diff < 86400) return `${Math.floor(diff / 3600)}시간 전`;
+            return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+        }
+
+        function getName(item, counter) {
+            if (item.isAuthor) return '글쓴이';
+            return item.live ? (item.nickname || '익명') : (item.author || `익명${++counter.n}`);
+        }
+
+        function nameHtml(item, name, prefix) {
+            if (item.isAuthor) {
+                return `<span class="text-[10px]">${prefix}🍎</span>
+                        <span class="bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded font-bold">글쓴이</span>`;
+            }
+            return `<span class="text-[10px]">${prefix}🍎</span><span>${esc(name)}</span>`;
+        }
+
+        function itemHtml(item, counter, o) {
+            const name = getName(item, counter);
+            const idx = names.push(name) - 1;
+            const mention = item.replyToName
+                ? `<span class="text-red-500 dark:text-red-400 font-semibold">@${esc(item.replyToName)}</span> ` : '';
+            const delBtn = (item.live && isAuthorUser)
+                ? `<button onclick="delLive(${item.id})" class="text-gray-400 hover:text-red-500">삭제</button>` : '';
+            return `
+                <div class="${o.wrapClass || ''}">
+                    <div class="flex items-center justify-between text-xs text-gray-400 dark:text-gray-500 mb-1.5">
+                        <div class="flex items-center space-x-1 font-semibold text-gray-700 dark:text-gray-300">
+                            ${nameHtml(item, name, o.prefix)}
+                        </div>
+                        <div class="flex items-center space-x-2 text-[11px]">
+                            <span>${esc(item.live ? fmtTime(item.createdAt) : (item.time || '방금 전'))}</span>
+                            <button onclick="startReply('${o.topKey}', ${idx}, ${!!o.isReply})" class="hover:text-red-500">답글</button>
+                            ${delBtn}
+                            <button onclick="${o.likeCall}" class="flex items-center text-red-500 font-medium hover:text-red-600 transition-transform active:scale-125 cursor-pointer select-none">
+                                <i data-lucide="thumbs-up" class="w-3 h-3 mr-0.5 inline"></i><span>${o.likes || 0}</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="text-xs sm:text-sm text-gray-800 dark:text-gray-200 break-words leading-relaxed whitespace-pre-wrap">${mention}${esc(item.text)}</div>
+                </div>`;
+        }
+
+        /* ---------- 렌더링 ---------- */
+        function render() {
+            document.getElementById('displayPostTitle').innerText = POST_DATA.title;
+            document.getElementById('displayPostTime').innerText = POST_DATA.time;
+            document.getElementById('displayViews').innerText = POST_DATA.views.toLocaleString();
+            document.getElementById('displayLikes').innerText = (likesMap['post'] || 0).toLocaleString();
+            document.getElementById('displayPostContent').innerText = POST_DATA.content;
+
+            const container = document.getElementById('commentsContainer');
+            container.innerHTML = '';
+            names = [];
+            const counter = { n: 0 };
+            let total = 0;
+
+            const tops = [
+                ...POST_DATA.comments.map((c, i) => ({ ...c, key: 's' + i, live: false })),
+                ...live.filter(d => !d.parentKey),
+            ];
+
+            tops.forEach((c) => {
+                const staticReplies = (c.replies || []).map((r, ri) => ({ ...r, metaKey: `${c.key}_${ri}`, live: false }));
+                const liveReplies = live.filter(d => d.parentKey === c.key);
+                total += 1 + staticReplies.length + liveReplies.length;
+
+                const cardClass = c.isAuthor
+                    ? 'bg-red-50/70 dark:bg-red-950/30 border-red-200 dark:border-red-900/60'
+                    : 'bg-slate-50 dark:bg-slate-800/60 border-slate-100 dark:border-slate-800';
+
+                let html = itemHtml(c, counter, {
+                    prefix: '', topKey: c.key,
+                    likes: c.live ? c.likes : likesMap[c.key],
+                    likeCall: c.live ? `likeLive(${c.id})` : `likeMeta('${c.key}')`,
+                });
+
+                [...staticReplies, ...liveReplies].forEach((r) => {
+                    html += itemHtml(r, counter, {
+                        prefix: '↳ ', topKey: c.key, isReply: true,
+                        likes: r.live ? r.likes : likesMap[r.metaKey],
+                        likeCall: r.live ? `likeLive(${r.id})` : `likeMeta('${r.metaKey}')`,
+                        wrapClass: 'mt-2.5 pt-2 border-t border-slate-200/60 dark:border-slate-700/60 pl-3 border-l-2 border-l-red-400 dark:border-l-red-500',
+                    });
+                });
+
+                const el = document.createElement('div');
+                el.className = `w-full rounded-xl px-3 py-3 text-left border ${cardClass}`;
+                el.innerHTML = html;
+                container.appendChild(el);
+            });
+
+            document.getElementById('displayCommentCount').innerText = total;
+            if (window.lucide) lucide.createIcons();
+        }
+
+        /* ---------- 서버에서 불러오기 ---------- */
+        async function loadAll() {
+            const [c, m] = await Promise.all([
+                supabase.from('comments').select('*').order('created_at', { ascending: true }),
+                supabase.from('meta').select('*'),
+            ]);
+            if (c.error) console.error('댓글 불러오기 실패:', c.error);
+            else live = c.data.map(r => ({
+                id: r.id, key: String(r.id), live: true,
+                text: r.text, nickname: r.nickname, isAuthor: r.is_author,
+                parentKey: r.parent_key, replyToName: r.reply_to_name,
+                likes: r.likes, createdAt: new Date(r.created_at),
+            }));
+            if (m.error) console.error(m.error);
+            else { likesMap = {}; m.data.forEach(r => likesMap[r.key] = r.likes); }
+            render();
+        }
+
+        /* ---------- 댓글 쓰기 / 답글 / 삭제 ---------- */
+        window.submitComment = async () => {
+            const textEl = document.getElementById('textInput');
+            const nickEl = document.getElementById('nickInput');
+            const btn = document.getElementById('submitBtn');
+            const text = textEl.value.trim();
+            if (!text) return;
+
+            let last = 0;
+            try { last = Number(localStorage.getItem('last_comment_at')) || 0; } catch (e) {}
+            if (!isAuthorUser && Date.now() - last < COOLDOWN_MS) {
+                alert(`${Math.ceil((COOLDOWN_MS - (Date.now() - last)) / 1000)}초 뒤에 다시 등록할 수 있어요.`);
+                return;
+            }
+
+            btn.disabled = true;
+            const { error } = await supabase.from('comments').insert({
+                text,
+                nickname: isAuthorUser ? '' : nickEl.value.trim().slice(0, 20),   // 비우면 '익명'으로 표시
+                parent_key: replyTo || null,
+                reply_to_name: replyTo ? replyToName : '',
+                is_author: isAuthorUser,
+            });
+            btn.disabled = false;
+
+            if (error) { console.error(error); alert('댓글 등록에 실패했어요. 잠시 후 다시 시도해 주세요.'); return; }
+            try { localStorage.setItem('last_comment_at', String(Date.now())); } catch (e) {}
+            textEl.value = '';
+            cancelReply();
+            loadAll();
+        };
+
+        window.startReply = (key, idx, isReply) => {
+            replyTo = key;
+            replyToName = isReply ? names[idx] : '';
+            document.getElementById('replyTarget').innerText = isReply ? `@${names[idx]}에게` : '';
+            document.getElementById('replyNotice').classList.remove('hidden');
+            document.getElementById('textInput').focus();
+        };
+        window.cancelReply = () => {
+            replyTo = null;
+            replyToName = '';
+            document.getElementById('replyNotice').classList.add('hidden');
+        };
+        window.delLive = async (id) => {
+            if (!confirm('이 댓글을 삭제할까요? (이 댓글에 달린 답글은 화면에서 사라져요)')) return;
+            const { error } = await supabase.from('comments').delete().eq('id', id);
+            if (error) console.error(error);
+            loadAll();
+        };
+
+        /* ---------- 좋아요 (서버 함수로 안전하게 +1) ---------- */
+        window.likeMeta = async (key) => {
+            likesMap[key] = (likesMap[key] || 0) + 1; render();
+            const { error } = await supabase.rpc('like_meta', { k: key });
+            if (error) console.error(error);
+        };
+        window.likeLive = async (id) => {
+            const c = live.find(x => x.id === id);
+            if (c) { c.likes++; render(); }
+            const { error } = await supabase.rpc('like_comment', { cid: id });
+            if (error) console.error(error);
+        };
+
+        /* ---------- 글쓴이 로그인 (주소 뒤에 ?admin 을 붙였을 때만 버튼이 보임) ---------- */
+        window.adminLogin = async () => {
+            const email = prompt('글쓴이 이메일');
+            if (!email) return;
+            const password = prompt('비밀번호');
+            if (!password) return;
+            const { error } = await supabase.auth.signInWithPassword({ email, password });
+            if (error) alert('로그인 실패');
+        };
+        if (new URLSearchParams(location.search).has('admin')) {
+            document.getElementById('adminBtn').classList.remove('hidden');
+        }
+
+        supabase.auth.onAuthStateChange((_event, session) => {
+            isAuthorUser = !!session?.user?.email;   // 서버 정책(RLS)에서 본인 이메일인지 다시 검증함
+            document.getElementById('authorNotice').classList.toggle('hidden', !isAuthorUser);
+            document.getElementById('nickInput').classList.toggle('hidden', isAuthorUser);
+            render();
+        });
+
+        /* ---------- 시작 ---------- */
+        render();
+        loadAll();
+        setInterval(loadAll, POLL_MS);
+    </script>
+</body>
+</html>
